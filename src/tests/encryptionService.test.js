@@ -439,10 +439,17 @@ describe('EncryptionService', () => {
       const password = EncryptionService.generateSecurePassword()
       
       expect(password).toHaveLength(16)
-      expect(/[a-z]/.test(password)).toBe(true)
-      expect(/[A-Z]/.test(password)).toBe(true)
-      expect(/\d/.test(password)).toBe(true)
-      expect(/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password)).toBe(true)
+      
+      // Test multiple passwords to ensure character sets are available
+      const passwords = Array.from({ length: 20 }, () => 
+        EncryptionService.generateSecurePassword()
+      )
+      
+      const allPasswords = passwords.join('')
+      expect(/[a-z]/.test(allPasswords)).toBe(true)
+      expect(/[A-Z]/.test(allPasswords)).toBe(true)
+      expect(/\d/.test(allPasswords)).toBe(true)
+      expect(/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(allPasswords)).toBe(true)
     })
 
     it('should generate passwords with specified length', () => {

@@ -1,337 +1,417 @@
 /**
- * Browser File Service
+ * Browser-compatible File Service
  * 
- * Browser-compatible wrapper for the file service that uses Electron dialog APIs
- * instead of direct Node.js file system access.
+ * Provides file handling functionality for browser environment:
+ * - File validation and safety checks
+ * - File type detection
+ * - Temporary file management (in-memory)
+ * - File size formatting
  */
-
-import { fileService } from './fileService.js'
 
 /**
- * Browser File Service class that integrates Electron dialogs
+ * File service configuration
  */
-export class BrowserFileService {
+export const FILE_CONFIG = {
+  // Maximum file size (2GB)
+  MAX_FILE_SIZE: 2 * 1024 * 1024 * 1024,
+  
+  // Temporary file cleanup interval (5 minutes)
+  CLEANUP_INTERVAL: 5 * 60 * 1000,
+  
+  // Temporary file max age (30 minutes)
+  TEMP_FILE_MAX_AGE: 30 * 60 * 1000,
+  
+  // Supported archive extensions
+  ARCHIVE_EXTENSIONS: ['.zip', '.tar', '.gz', '.7z', '.rar', '.bz2', '.xz'],
+  
+  // Dangerous file extensions
+  DANGEROUS_EXTENSIONS: ['.exe', '.dll', '.sys', '.bat', '.cmd', '.com', '.scr', '.vbs', '.js', '.jar'],
+  
+  // Text file extensions
+  TEXT_EXTENSIONS: ['.txt', '.md', '.json', '.xml', '.csv', '.log', '.yml', '.yaml', '.ini', '.cfg']
+}
+
+/**
+ * Browser-compatible Temporary File Manager
+ */
+class BrowserTempFileManager {
   constructor() {
-    this.fileService = fileService
+    this.tempFiles = new Map()
+    this.cleanupInterval = null
+    this.fileCounter = 0
+    this.startCleanupTimer()
   }
   
   /**
-   * Check if running in Electron environment
-   * @returns {boolean} True if Electron is available
+   * Create a temporary file reference
+   * @param {string} extension - Optional file extension
+   * @returns {string} Temporary file identifier
    */
-  isElectronAvailable() {
-    return typeof window !== 'undefined' && window.electronAPI && window.electronAPI.dialog
-  }
-  
-  /**
-   * Show file selection dialog and validate selected file
-   * @param {Object} options - Dialog options
-   * @returns {Promise<Object>} Selected and validated file info
-   */
-  async selectFile(options = {}) {
-    if (!this.isElectronAvailable()) {
-      throw new Error('File selection requires Electron environment')
-    }
+  createTempFile(extension = '') {
+    const id = `temp_${Date.now()}_${this.fileCounter++}${extension}`
     
-    try {
-      const result = await window.electronAPI.dialog.openFile(options)
-      
-      if (!result.success || !result.filePath) {
-        return { success: false, cancelled: true }
-      }
-      
-      // Validate the selected file using our file service
-      const fileInfo = await this.fileService.selectFile(result.filePath)
-      
-      return {
-        success: true,
-        cancelled: false,
-        ...fileInfo
-      }
-    } catch (error) {
-      await this.showError('File Selection Error', error.message)
-      return { success: false, error: error.message }
-    }
-  }
-  
-  /**
-   * Show multiple file selection dialog and validate selected files
-   * @param {Object} options - Dialog options
-   * @returns {Promise<Object>} Selected and validated files info
-   */
-  async selectFiles(options = {}) {
-    if (!this.isElectronAvailable()) {
-      throw new Error('File selection requires Electron environment')
-    }
-    
-    try {
-      const result = await window.electronAPI.dialog.openFiles(options)
-      
-      if (!result.success || !result.filePaths.length) {
-        return { success: false, cancelled: true, files: [] }
-      }
-      
-      // Validate all selected files
-      const validatedFiles = []
-      const errors = []
-      
-      for (const filePath of result.filePaths) {
-        try {
-          const fileInfo = await this.fileService.selectFile(filePath)
-          validatedFiles.push(fileInfo)
-        } catch (error) {
-          errors.push({ path: filePath, error: error.message })
-        }
-      }
-      
-      return {
-        success: validatedFiles.length > 0,
-        cancelled: false,
-        files: validatedFiles,
-        errors: errors
-      }
-    } catch (error) {
-      await this.showError('File Selection Error', error.message)
-      return { success: false, error: error.message, files: [] }
-    }
-  }
-  
-  /**
-   * Show directory selection dialog and validate selected directory
-   * @param {Object} options - Dialog options
-   * @returns {Promise<Object>} Selected and validated directory info
-   */
-  async selectDirectory(options = {}) {
-    if (!this.isElectronAvailable()) {
-      throw new Error('Directory selection requires Electron environment')
-    }
-    
-    try {
-      const result = await window.electronAPI.dialog.openDirectory(options)
-      
-      if (!result.success || !result.dirPath) {
-        return { success: false, cancelled: true }
-      }
-      
-      // Validate the selected directory using our file service
-      const dirInfo = await this.fileService.selectDirectory(result.dirPath)
-      
-      return {
-        success: true,
-        cancelled: false,
-        ...dirInfo
-      }
-    } catch (error) {
-      await this.showError('Directory Selection Error', error.message)
-      return { success: false, error: error.message }
-    }
-  }
-  
-  /**
-   * Show save file dialog
-   * @param {Object} options - Dialog options
-   * @returns {Promise<Object>} Save file result
-   */
-  async selectSaveLocation(options = {}) {
-    if (!this.isElectronAvailable()) {
-      throw new Error('Save dialog requires Electron environment')
-    }
-    
-    try {
-      const result = await window.electronAPI.dialog.saveFile(options)
-      
-      if (!result.success || !result.filePath) {
-        return { success: false, cancelled: true }
-      }
-      
-      // Normalize the path
-      const normalizedPath = this.fileService.normalizePath(result.filePath)
-      
-      return {
-        success: true,
-        cancelled: false,
-        path: normalizedPath
-      }
-    } catch (error) {
-      await this.showError('Save Dialog Error', error.message)
-      return { success: false, error: error.message }
-    }
-  }
-  
-  /**
-   * Show confirmation dialog
-   * @param {string} title - Dialog title
-   * @param {string} message - Dialog message
-   * @param {Object} options - Additional options
-   * @returns {Promise<Object>} User response
-   */
-  async showConfirmation(title, message, options = {}) {
-    if (!this.isElectronAvailable()) {
-      // Fallback to browser confirm
-      const confirmed = confirm(`${title}\n\n${message}`)
-      return { response: confirmed ? 0 : 1, checkboxChecked: false }
-    }
-    
-    const dialogOptions = {
-      type: 'question',
-      title,
-      message,
-      buttons: options.buttons || ['Yes', 'No'],
-      defaultId: options.defaultId || 0,
-      cancelId: options.cancelId || 1,
-      ...options
-    }
-    
-    return await window.electronAPI.dialog.showMessageBox(dialogOptions)
-  }
-  
-  /**
-   * Show information dialog
-   * @param {string} title - Dialog title
-   * @param {string} message - Dialog message
-   * @param {string} detail - Optional detail text
-   * @returns {Promise<Object>} Dialog result
-   */
-  async showInfo(title, message, detail = '') {
-    if (!this.isElectronAvailable()) {
-      alert(`${title}\n\n${message}${detail ? '\n\n' + detail : ''}`)
-      return { response: 0 }
-    }
-    
-    return await window.electronAPI.dialog.showMessageBox({
-      type: 'info',
-      title,
-      message,
-      detail,
-      buttons: ['OK']
+    this.tempFiles.set(id, {
+      created: Date.now(),
+      size: 0,
+      extension
     })
+    
+    return id
   }
   
   /**
-   * Show warning dialog
-   * @param {string} title - Dialog title
-   * @param {string} message - Dialog message
-   * @param {string} detail - Optional detail text
-   * @returns {Promise<Object>} Dialog result
+   * Create a temporary directory reference
+   * @returns {string} Temporary directory identifier
    */
-  async showWarning(title, message, detail = '') {
-    if (!this.isElectronAvailable()) {
-      alert(`Warning: ${title}\n\n${message}${detail ? '\n\n' + detail : ''}`)
-      return { response: 0 }
-    }
+  createTempDirectory() {
+    const id = `tempdir_${Date.now()}_${this.fileCounter++}`
     
-    return await window.electronAPI.dialog.showMessageBox({
-      type: 'warning',
-      title,
-      message,
-      detail,
-      buttons: ['OK']
+    this.tempFiles.set(id, {
+      created: Date.now(),
+      isDirectory: true
     })
-  }
-  
-  /**
-   * Show error dialog
-   * @param {string} title - Dialog title
-   * @param {string} message - Error message
-   * @returns {Promise<Object>} Dialog result
-   */
-  async showError(title, message) {
-    if (!this.isElectronAvailable()) {
-      alert(`Error: ${title}\n\n${message}`)
-      return { response: 0 }
-    }
     
-    return await window.electronAPI.dialog.showErrorBox(title, message)
+    return id
   }
   
   /**
-   * Create temporary file (delegates to file service)
-   * @param {string} extension - File extension
-   * @returns {Promise<string>} Temporary file path
+   * Clean up a temporary file
+   * @param {string} id - Temporary file identifier
    */
-  async createTempFile(extension = '') {
-    return await this.fileService.createTempFile(extension)
+  async cleanup(id) {
+    if (this.tempFiles.has(id)) {
+      this.tempFiles.delete(id)
+      return true
+    }
+    return false
   }
   
   /**
-   * Create temporary directory (delegates to file service)
-   * @returns {Promise<string>} Temporary directory path
+   * Clean up old temporary files
    */
-  async createTempDirectory() {
-    return await this.fileService.createTempDirectory()
+  async cleanupOld() {
+    const now = Date.now()
+    const maxAge = FILE_CONFIG.TEMP_FILE_MAX_AGE
+    
+    for (const [id, info] of this.tempFiles.entries()) {
+      if (now - info.created > maxAge) {
+        this.tempFiles.delete(id)
+      }
+    }
   }
   
   /**
-   * Update temporary file access time (delegates to file service)
-   * @param {string} tempPath - Temporary file path
+   * Start automatic cleanup timer
    */
-  updateTempAccess(tempPath) {
-    this.fileService.updateTempAccess(tempPath)
+  startCleanupTimer() {
+    if (this.cleanupInterval) return
+    
+    this.cleanupInterval = setInterval(async () => {
+      await this.cleanupOld()
+    }, FILE_CONFIG.CLEANUP_INTERVAL)
   }
   
   /**
-   * Clean up temporary file (delegates to file service)
-   * @param {string} tempPath - Path to clean up
+   * Stop cleanup timer
    */
-  async cleanupTemp(tempPath) {
-    await this.fileService.cleanupTemp(tempPath)
+  stopCleanupTimer() {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval)
+      this.cleanupInterval = null
+    }
   }
   
   /**
-   * Check if path is safe (delegates to file service)
-   * @param {string} filePath - Path to check
-   * @param {string} basePath - Base directory
-   * @returns {boolean} True if path is safe
-   */
-  isPathSafe(filePath, basePath) {
-    return this.fileService.isPathSafe(filePath, basePath)
-  }
-  
-  /**
-   * Get normalized path (delegates to file service)
-   * @param {string} filePath - Path to normalize
-   * @returns {string} Normalized path
-   */
-  normalizePath(filePath) {
-    return this.fileService.normalizePath(filePath)
-  }
-  
-  /**
-   * Get file information (delegates to file service)
-   * @param {string} filePath - File path
-   * @returns {Promise<Object>} File information
-   */
-  async getFileInfo(filePath) {
-    return await this.fileService.getFileInfo(filePath)
-  }
-  
-  /**
-   * Check if file exists (delegates to file service)
-   * @param {string} filePath - Path to check
-   * @returns {Promise<boolean>} True if exists
-   */
-  async exists(filePath) {
-    return await this.fileService.exists(filePath)
-  }
-  
-  /**
-   * Get temporary files info (delegates to file service)
-   * @returns {Array} Array of temporary file info
+   * Get temporary files info
+   * @returns {Array} Array of temp file info
    */
   getTempFilesInfo() {
-    return this.fileService.getTempFilesInfo()
-  }
-  
-  /**
-   * Clean up all resources (delegates to file service)
-   */
-  async cleanup() {
-    await this.fileService.cleanup()
+    return Array.from(this.tempFiles.entries()).map(([id, info]) => ({
+      id,
+      ...info
+    }))
   }
 }
 
-// Create singleton instance
-export const browserFileService = new BrowserFileService()
+/**
+ * Browser-compatible File Service
+ */
+export class BrowserFileService {
+  constructor() {
+    this.tempManager = new BrowserTempFileManager()
+  }
+  
+  /**
+   * Get file information from File object
+   * @param {File} file - File object
+   * @returns {Object} File information
+   */
+  async getFileInfo(file) {
+    if (!(file instanceof File || file instanceof Blob)) {
+      throw new Error('Invalid file object')
+    }
+    
+    return {
+      name: file.name || 'unnamed',
+      size: file.size,
+      type: file.type || this.getMimeType(file.name),
+      lastModified: file.lastModified ? new Date(file.lastModified) : new Date(),
+      extension: this.getExtension(file.name)
+    }
+  }
+  
+  /**
+   * Check if path is safe (no directory traversal)
+   * @param {string} filePath - File path to check
+   * @param {string} basePath - Base path for comparison
+   * @returns {boolean} True if path is safe
+   */
+  isPathSafe(filePath, basePath = '') {
+    // Remove any directory traversal attempts
+    const cleaned = filePath.replace(/\.\./g, '').replace(/\/\//g, '/')
+    
+    // Check if path contains suspicious patterns
+    const suspicious = [
+      '../',
+      '..\\',
+      '..',
+      '~/',
+      '~\\',
+      '/etc/',
+      'C:\\Windows',
+      'C:\\Program Files'
+    ]
+    
+    return !suspicious.some(pattern => cleaned.includes(pattern))
+  }
+  
+  /**
+   * Get file extension
+   * @param {string} filename - File name
+   * @returns {string} File extension with dot
+   */
+  getExtension(filename) {
+    if (!filename) return ''
+    const lastDot = filename.lastIndexOf('.')
+    return lastDot > 0 ? filename.substring(lastDot).toLowerCase() : ''
+  }
+  
+  /**
+   * Get MIME type from filename
+   * @param {string} filename - File name
+   * @returns {string} MIME type
+   */
+  getMimeType(filename) {
+    const ext = this.getExtension(filename).substring(1)
+    
+    const mimeTypes = {
+      // Text
+      'txt': 'text/plain',
+      'html': 'text/html',
+      'css': 'text/css',
+      'js': 'application/javascript',
+      'json': 'application/json',
+      'xml': 'application/xml',
+      
+      // Images
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'gif': 'image/gif',
+      'svg': 'image/svg+xml',
+      'webp': 'image/webp',
+      
+      // Documents
+      'pdf': 'application/pdf',
+      'doc': 'application/msword',
+      'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'xls': 'application/vnd.ms-excel',
+      'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'ppt': 'application/vnd.ms-powerpoint',
+      'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      
+      // Archives
+      'zip': 'application/zip',
+      'rar': 'application/x-rar-compressed',
+      '7z': 'application/x-7z-compressed',
+      'tar': 'application/x-tar',
+      'gz': 'application/gzip',
+      
+      // Audio
+      'mp3': 'audio/mpeg',
+      'wav': 'audio/wav',
+      'ogg': 'audio/ogg',
+      
+      // Video
+      'mp4': 'video/mp4',
+      'avi': 'video/x-msvideo',
+      'mov': 'video/quicktime',
+      'webm': 'video/webm'
+    }
+    
+    return mimeTypes[ext] || 'application/octet-stream'
+  }
+  
+  /**
+   * Check if file is an archive
+   * @param {File|string} fileOrName - File object or filename
+   * @returns {boolean} True if file is an archive
+   */
+  isArchive(fileOrName) {
+    const filename = typeof fileOrName === 'string' ? fileOrName : fileOrName.name
+    const ext = this.getExtension(filename)
+    return FILE_CONFIG.ARCHIVE_EXTENSIONS.includes(ext)
+  }
+  
+  /**
+   * Check if file is potentially dangerous
+   * @param {string} filename - File name
+   * @returns {boolean} True if file might be dangerous
+   */
+  isDangerous(filename) {
+    const ext = this.getExtension(filename)
+    return FILE_CONFIG.DANGEROUS_EXTENSIONS.includes(ext)
+  }
+  
+  /**
+   * Check if file is a text file
+   * @param {string} filename - File name
+   * @returns {boolean} True if file is a text file
+   */
+  isTextFile(filename) {
+    const ext = this.getExtension(filename)
+    return FILE_CONFIG.TEXT_EXTENSIONS.includes(ext)
+  }
+  
+  /**
+   * Format file size for display
+   * @param {number} bytes - Size in bytes
+   * @param {number} decimals - Number of decimal places
+   * @returns {string} Formatted size string
+   */
+  formatSize(bytes, decimals = 2) {
+    if (bytes === 0) return '0 Bytes'
+    
+    const k = 1024
+    const dm = decimals < 0 ? 0 : decimals
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB']
+    
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i]
+  }
+  
+  /**
+   * Validate file size
+   * @param {number} size - File size in bytes
+   * @returns {boolean} True if size is valid
+   */
+  isValidSize(size) {
+    return size > 0 && size <= FILE_CONFIG.MAX_FILE_SIZE
+  }
+  
+  /**
+   * Read file as text
+   * @param {File} file - File to read
+   * @returns {Promise<string>} File content as text
+   */
+  async readAsText(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result)
+      reader.onerror = () => reject(new Error('Failed to read file'))
+      reader.readAsText(file)
+    })
+  }
+  
+  /**
+   * Read file as ArrayBuffer
+   * @param {File} file - File to read
+   * @returns {Promise<ArrayBuffer>} File content as ArrayBuffer
+   */
+  async readAsArrayBuffer(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result)
+      reader.onerror = () => reject(new Error('Failed to read file'))
+      reader.readAsArrayBuffer(file)
+    })
+  }
+  
+  /**
+   * Read file as Data URL
+   * @param {File} file - File to read
+   * @returns {Promise<string>} File content as Data URL
+   */
+  async readAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result)
+      reader.onerror = () => reject(new Error('Failed to read file'))
+      reader.readAsDataURL(file)
+    })
+  }
+  
+  /**
+   * Create temporary file
+   * @param {string} extension - Optional file extension
+   * @returns {Promise<string>} Temporary file identifier
+   */
+  async createTempFile(extension = '') {
+    return this.tempManager.createTempFile(extension)
+  }
+  
+  /**
+   * Create temporary directory
+   * @returns {Promise<string>} Temporary directory identifier
+   */
+  async createTempDirectory() {
+    return this.tempManager.createTempDirectory()
+  }
+  
+  /**
+   * Clean up temporary file
+   * @param {string} id - Temporary file identifier
+   * @returns {Promise<boolean>} True if cleanup successful
+   */
+  async cleanupTemp(id) {
+    return this.tempManager.cleanup(id)
+  }
+  
+  /**
+   * Get temporary files info
+   * @returns {Array} Array of temporary file info
+   */
+  getTempFilesInfo() {
+    return this.tempManager.getTempFilesInfo()
+  }
+  
+  /**
+   * Download a blob as a file
+   * @param {Blob} blob - Blob to download
+   * @param {string} filename - Filename for download
+   */
+  downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+  
+  /**
+   * Create a blob from text
+   * @param {string} text - Text content
+   * @param {string} type - MIME type
+   * @returns {Blob} Created blob
+   */
+  createBlob(text, type = 'text/plain') {
+    return new Blob([text], { type })
+  }
+}
 
-// Export for convenience
-export default browserFileService
+// Create and export singleton instance
+export const fileService = new BrowserFileService()

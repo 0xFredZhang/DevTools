@@ -354,8 +354,11 @@ class TempFileManager {
       await this.cleanupOld()
     }, FILE_CONFIG.CLEANUP_INTERVAL)
     
-    // Don't keep process alive for cleanup timer
-    this.cleanupInterval.unref()
+    // Don't keep process alive for cleanup timer (Node.js only)
+    // In browser environment, this is not needed
+    if (typeof this.cleanupInterval.unref === 'function') {
+      this.cleanupInterval.unref()
+    }
   }
   
   /**

@@ -444,8 +444,8 @@
 
 <script setup>
 import { ref, nextTick, onMounted, onUnmounted } from 'vue'
-import { compressionService, CompressionError } from '../services/compressionService.js'
-import { fileService } from '../services/fileService.js'
+import { browserCompressionService as compressionService, CompressionError, COMPRESSION_CONFIG } from '../services/browserCompressionService.js'
+import { fileService } from '../services/browserFileService.js'
 import { errorHandlingService, ERROR_CODES } from '../services/errorHandlingService.js'
 import { progressTrackingService, ProgressUtils, PROGRESS_EVENTS } from '../services/progressTrackingService.js'
 import { operationCancellationService, CANCELLATION_REASONS } from '../services/operationCancellationService.js'
@@ -582,7 +582,7 @@ const selectFiles = async (selectDirectory) => {
 const formatFileSize = ProgressUtils.formatFileSize
 
 const isArchiveFile = (file) => {
-  const archiveExtensions = ['.zip', '.tar', '.tar.gz', '.7z', '.rar']
+  const archiveExtensions = ['.zip', '.tar', '.tar.gz', '.7z', '.rar', '.encrypted.zip']
   return archiveExtensions.some(ext => file.name.toLowerCase().endsWith(ext))
 }
 
@@ -629,6 +629,8 @@ onUnmounted(() => {
 })
 
 // Convert File objects to file paths for compression service
+// No longer needed with browser compression service
+/*
 const convertFilesToPaths = async (files) => {
   const filePaths = []
   
@@ -655,6 +657,7 @@ const convertFilesToPaths = async (files) => {
   
   return filePaths
 }
+*/
 
 // Main processing methods
 const compressFiles = async () => {
@@ -673,17 +676,11 @@ const compressFiles = async () => {
   progress.value = 0
   
   try {
-    // Convert browser File objects to file paths
-    const filePaths = await convertFilesToPaths(selectedFiles.value)
-    
-    // Create output path
-    const outputPath = await fileService.createTempFile('.zip')
-    
-    // Compress files using the compression service
-    const result = await compressionService.compress(filePaths, outputPath, {
-      format: compressionFormat.value,
+    // Compress files using the browser compression service
+    const result = await compressionService.compress(selectedFiles.value, {
       level: compressionLevel.value,
       password: enablePassword.value ? password.value : null,
+      filename: `archive_${Date.now()}.zip`,
       onProgress: (progressInfo) => {
         progress.value = progressInfo.progress
       }
@@ -691,20 +688,13 @@ const compressFiles = async () => {
     
     if (result.success) {
       currentOperationId.value = result.operationId
-      success.value = `成功压缩 ${result.filesProcessed} 个文件为 ${compressionFormat.value.toUpperCase()} 格式`
+      success.value = `成功压缩 ${result.filesProcessed} 个文件为 ${result.format.toUpperCase()} 格式`
       
-      // In a real implementation, you would download the compressed file
-      // For now, we'll just show success
-      console.log('Compression completed:', result)
+      // Download the compressed file
+      compressionService.downloadBlob(result.blob, result.filename)
       
-      // Clean up temporary files
-      for (const file of filePaths) {
-        try {
-          await fileService.cleanupTemp(file.path)
-        } catch (e) {
-          console.warn('Failed to cleanup temp file:', e)
-        }
-      }
+      // Clear selected files after successful compression
+      selectedFiles.value = []
     }
     
   } catch (err) {
@@ -738,19 +728,8 @@ const extractArchive = async () => {
   progress.value = 0
 
   try {
-    // Create temporary file for the archive
-    const archivePath = await fileService.createTempFile()
-    const buffer = await selectedArchive.value.arrayBuffer()
-    
-    // Write archive file - in a real implementation, this would need
-    // to be handled through IPC to the main process
-    // For now, we'll simulate this
-    
-    // Create output directory
-    const outputDir = await fileService.createTempDirectory()
-    
-    // Decompress using the compression service
-    const result = await compressionService.decompress(archivePath, outputDir, {
+    // Decompress using the browser compression service
+    const result = await compressionService.decompress(selectedArchive.value, {
       password: needPassword.value ? extractPassword.value : null,
       onProgress: (progressInfo) => {
         progress.value = progressInfo.progress
@@ -760,11 +739,11 @@ const extractArchive = async () => {
     if (result.success) {
       success.value = `成功解压 ${result.filesExtracted} 个文件`
       
-      // In a real implementation, you would provide download or preview of extracted files
-      console.log('Extraction completed:', result)
+      // Download extracted files with folder structure
+      await compressionService.downloadExtractedFiles(result.files, selectedArchive.value.name)
       
-      // Clean up
-      await fileService.cleanupTemp(archivePath)
+      // Clear selected archive
+      selectedArchive.value = null
     }
     
   } catch (err) {
@@ -772,6 +751,12 @@ const extractArchive = async () => {
     
     if (err instanceof CompressionError) {
       error.value = err.getUserMessage()
+      
+      // If the error is about missing password, enable password field
+      if (err.code === COMPRESSION_CONFIG.ERRORS.WRONG_PASSWORD && !needPassword.value) {
+        needPassword.value = true
+        error.value = '此文件已加密，请输入密码'
+      }
     } else {
       error.value = `解压失败: ${err.message}`
     }

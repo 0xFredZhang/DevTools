@@ -26,6 +26,9 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
+    "crypto-js": "^4.2.0",
+    "jszip": "^3.10.1",
+    "jszip-utils": "^0.1.0",
     "node-stream-zip": "^1.15.0",
     "qrcode": "^1.5.3",
     "vue": "^3.4.21",

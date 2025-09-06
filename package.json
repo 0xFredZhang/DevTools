@@ -16,9 +16,12 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
+    "node-stream-zip": "^1.15.0",
     "qrcode": "^1.5.3",
     "vue": "^3.4.21",
-    "vue-router": "^4.3.0"
+    "vue-router": "^4.3.0",
+    "yauzl": "^3.2.0",
+    "yazl": "^3.3.1"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.4",

@@ -376,7 +376,16 @@
         <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <div class="flex items-center justify-between mb-2">
             <span class="text-sm font-medium text-gray-700">处理进度</span>
-            <span class="text-sm text-gray-500">{{ Math.round(progress) }}%</span>
+            <div class="flex items-center space-x-2">
+              <span class="text-sm text-gray-500">{{ Math.round(progress) }}%</span>
+              <button
+                @click="cancelOperation"
+                class="px-3 py-1 text-sm bg-red-100 text-red-600 rounded hover:bg-red-200 transition-colors"
+                type="button"
+              >
+                取消
+              </button>
+            </div>
           </div>
           <div class="w-full bg-gray-200 rounded-full h-2">
             <div
@@ -435,6 +444,8 @@
 
 <script setup>
 import { ref, nextTick } from 'vue'
+import { compressionService, CompressionError } from '../services/compressionService.js'
+import { fileService } from '../services/fileService.js'
 
 // State management
 const activeTab = ref('compress')
@@ -444,6 +455,7 @@ const progress = ref(0)
 const error = ref('')
 const success = ref('')
 const showFilePicker = ref(false)
+const currentOperationId = ref(null)
 
 // File selection state
 const selectedFiles = ref([])
@@ -577,6 +589,34 @@ const clearMessages = () => {
   success.value = ''
 }
 
+// Convert File objects to file paths for compression service
+const convertFilesToPaths = async (files) => {
+  const filePaths = []
+  
+  for (const file of files) {
+    try {
+      // Create temporary file from File object
+      const tempPath = await fileService.createTempFile()
+      const buffer = await file.arrayBuffer()
+      
+      // Write file using Node.js fs (only available in Electron main process)
+      // For now, we'll simulate this - in a real implementation, this would need
+      // to be handled through IPC to the main process
+      
+      filePaths.push({
+        path: tempPath,
+        relativePath: file.name,
+        buffer: buffer // Pass buffer for now
+      })
+    } catch (err) {
+      console.error('Error converting file:', err)
+      throw new Error(`无法处理文件 ${file.name}: ${err.message}`)
+    }
+  }
+  
+  return filePaths
+}
+
 // Main processing methods
 const compressFiles = async () => {
   if (selectedFiles.value.length === 0) {
@@ -592,37 +632,54 @@ const compressFiles = async () => {
   clearMessages()
   isProcessing.value = true
   progress.value = 0
-
+  
   try {
-    // Simulate compression progress
-    const progressInterval = setInterval(() => {
-      progress.value += Math.random() * 10
-      if (progress.value >= 100) {
-        progress.value = 100
-        clearInterval(progressInterval)
-      }
-    }, 200)
-
-    // Simulate compression process
-    await new Promise(resolve => setTimeout(resolve, 3000))
-
-    // In a real implementation, you would use a compression library here
-    // For now, we'll simulate the process
-    success.value = `成功压缩 ${selectedFiles.value.length} 个文件为 ${compressionFormat.value.toUpperCase()} 格式`
+    // Convert browser File objects to file paths
+    const filePaths = await convertFilesToPaths(selectedFiles.value)
     
-    // Create a dummy download link simulation
-    console.log('Compression settings:', {
-      files: selectedFiles.value.map(f => f.name),
+    // Create output path
+    const outputPath = await fileService.createTempFile('.zip')
+    
+    // Compress files using the compression service
+    const result = await compressionService.compress(filePaths, outputPath, {
       format: compressionFormat.value,
       level: compressionLevel.value,
-      password: enablePassword.value ? '***' : 'none'
+      password: enablePassword.value ? password.value : null,
+      onProgress: (progressInfo) => {
+        progress.value = progressInfo.progress
+      }
     })
-
+    
+    if (result.success) {
+      currentOperationId.value = result.operationId
+      success.value = `成功压缩 ${result.filesProcessed} 个文件为 ${compressionFormat.value.toUpperCase()} 格式`
+      
+      // In a real implementation, you would download the compressed file
+      // For now, we'll just show success
+      console.log('Compression completed:', result)
+      
+      // Clean up temporary files
+      for (const file of filePaths) {
+        try {
+          await fileService.cleanupTemp(file.path)
+        } catch (e) {
+          console.warn('Failed to cleanup temp file:', e)
+        }
+      }
+    }
+    
   } catch (err) {
-    error.value = `压缩失败: ${err.message}`
+    console.error('Compression error:', err)
+    
+    if (err instanceof CompressionError) {
+      error.value = err.getUserMessage()
+    } else {
+      error.value = `压缩失败: ${err.message}`
+    }
   } finally {
     isProcessing.value = false
     progress.value = 0
+    currentOperationId.value = null
   }
 }
 
@@ -642,31 +699,57 @@ const extractArchive = async () => {
   progress.value = 0
 
   try {
-    // Simulate extraction progress
-    const progressInterval = setInterval(() => {
-      progress.value += Math.random() * 10
-      if (progress.value >= 100) {
-        progress.value = 100
-        clearInterval(progressInterval)
-      }
-    }, 200)
-
-    // Simulate extraction process
-    await new Promise(resolve => setTimeout(resolve, 2500))
-
-    // In a real implementation, you would use an extraction library here
-    success.value = `成功解压文件: ${selectedArchive.value.name}`
+    // Create temporary file for the archive
+    const archivePath = await fileService.createTempFile()
+    const buffer = await selectedArchive.value.arrayBuffer()
     
-    console.log('Extraction settings:', {
-      archive: selectedArchive.value.name,
-      password: needPassword.value ? '***' : 'none'
+    // Write archive file - in a real implementation, this would need
+    // to be handled through IPC to the main process
+    // For now, we'll simulate this
+    
+    // Create output directory
+    const outputDir = await fileService.createTempDirectory()
+    
+    // Decompress using the compression service
+    const result = await compressionService.decompress(archivePath, outputDir, {
+      password: needPassword.value ? extractPassword.value : null,
+      onProgress: (progressInfo) => {
+        progress.value = progressInfo.progress
+      }
     })
-
+    
+    if (result.success) {
+      success.value = `成功解压 ${result.filesExtracted} 个文件`
+      
+      // In a real implementation, you would provide download or preview of extracted files
+      console.log('Extraction completed:', result)
+      
+      // Clean up
+      await fileService.cleanupTemp(archivePath)
+    }
+    
   } catch (err) {
-    error.value = `解压失败: ${err.message}`
+    console.error('Extraction error:', err)
+    
+    if (err instanceof CompressionError) {
+      error.value = err.getUserMessage()
+    } else {
+      error.value = `解压失败: ${err.message}`
+    }
   } finally {
     isProcessing.value = false
     progress.value = 0
+  }
+}
+
+// Cancel operation if needed
+const cancelOperation = () => {
+  if (currentOperationId.value) {
+    compressionService.cancelOperation(currentOperationId.value)
+    isProcessing.value = false
+    progress.value = 0
+    currentOperationId.value = null
+    success.value = '操作已取消'
   }
 }
 

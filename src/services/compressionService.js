@@ -991,6 +991,3 @@ export class CompressionService {
 
 // Create and export singleton instance
 export const compressionService = new CompressionService()
-
-// Export configuration and utilities
-export { COMPRESSION_CONFIG, CompressionError }

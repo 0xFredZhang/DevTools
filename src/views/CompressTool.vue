@@ -443,17 +443,25 @@
 </template>
 
 <script setup>
-import { ref, nextTick } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { compressionService, CompressionError } from '../services/compressionService.js'
 import { fileService } from '../services/fileService.js'
+import { errorHandlingService, ERROR_CODES } from '../services/errorHandlingService.js'
+import { progressTrackingService, ProgressUtils, PROGRESS_EVENTS } from '../services/progressTrackingService.js'
+import { operationCancellationService, CANCELLATION_REASONS } from '../services/operationCancellationService.js'
+import { notificationService } from '../services/notificationService.js'
 
 // State management
 const activeTab = ref('compress')
 const isDragging = ref(false)
 const isProcessing = ref(false)
 const progress = ref(0)
+const progressDetails = ref(null)
 const error = ref('')
 const success = ref('')
+const notification = ref(null)
+const showProgressModal = ref(false)
+const currentOperation = ref(null)
 const showFilePicker = ref(false)
 const currentOperationId = ref(null)
 
@@ -571,13 +579,7 @@ const selectFiles = async (selectDirectory) => {
 }
 
 // Utility methods
-const formatFileSize = (bytes) => {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
+const formatFileSize = ProgressUtils.formatFileSize
 
 const isArchiveFile = (file) => {
   const archiveExtensions = ['.zip', '.tar', '.tar.gz', '.7z', '.rar']
@@ -587,7 +589,44 @@ const isArchiveFile = (file) => {
 const clearMessages = () => {
   error.value = ''
   success.value = ''
+  notification.value = null
 }
+
+// Format utilities for display
+const formatDuration = ProgressUtils.formatDuration
+const formatSpeed = ProgressUtils.formatSpeed
+
+// Progress event handlers
+const handleProgressEvents = () => {
+  progressTrackingService.addEventListener(PROGRESS_EVENTS.UPDATED, (progressData) => {
+    if (currentOperation.value && progressData.operationId === currentOperation.value.operationId) {
+      progress.value = progressData.percentage
+    }
+  })
+  
+  progressTrackingService.addEventListener(PROGRESS_EVENTS.COMPLETED, (progressData) => {
+    console.log('Operation completed:', progressData)
+  })
+  
+  progressTrackingService.addEventListener(PROGRESS_EVENTS.FAILED, (progressData) => {
+    console.error('Operation failed:', progressData)
+  })
+}
+
+// Lifecycle hooks
+onMounted(() => {
+  handleProgressEvents()
+})
+
+onUnmounted(() => {
+  // Cancel any active operations when component is destroyed
+  if (currentOperation.value) {
+    operationCancellationService.cancelOperation(
+      currentOperation.value.operationId,
+      CANCELLATION_REASONS.SYSTEM_SHUTDOWN
+    )
+  }
+})
 
 // Convert File objects to file paths for compression service
 const convertFilesToPaths = async (files) => {

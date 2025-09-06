@@ -1,7 +1,7 @@
 <template>
   <div class="p-8">
     <div class="max-w-6xl mx-auto">
-      <h1 class="text-2xl font-bold text-gray-800 mb-6">文件压缩工具</h1>
+      <h1 class="text-2xl font-bold text-gray-800 mb-6">压缩/解压缩</h1>
       
       <!-- Tab Navigation -->
       <div class="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">

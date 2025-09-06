@@ -54,7 +54,7 @@ const menuItems = [
   { path: '/', name: '首页', icon: '🏠' },
   { path: '/json-parser', name: 'JSON 解析器', icon: '📝' },
   { path: '/json-compress', name: 'JSON 压缩/转义', icon: '🗜️' },
-  { path: '/compress-tool', name: '文件压缩工具', icon: '📦' },
+  { path: '/compress-tool', name: '压缩/解压缩', icon: '📦' },
   { path: '/qr-generator', name: '二维码生成器', icon: '📱' },
   { path: '/timestamp', name: 'Unix 时间戳', icon: '🕐' }
 ]

@@ -1,5 +1,6 @@
-const { app, BrowserWindow, Menu } = require('electron')
+const { app, BrowserWindow, Menu, ipcMain, dialog } = require('electron')
 const path = require('path')
+const fs = require('fs').promises
 
 let mainWindow
 
@@ -89,6 +90,72 @@ function createMenu() {
   const menu = Menu.buildFromTemplate(template)
   Menu.setApplicationMenu(menu)
 }
+
+// IPC handlers for file operations
+ipcMain.handle('file:select', async (event, options = {}) => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile'],
+    filters: options.filters || [
+      { name: 'All Files', extensions: ['*'] }
+    ]
+  });
+  return result;
+});
+
+ipcMain.handle('file:save-as', async (event, options = {}) => {
+  const result = await dialog.showSaveDialog(mainWindow, {
+    filters: options.filters || [
+      { name: 'All Files', extensions: ['*'] }
+    ],
+    defaultPath: options.defaultPath
+  });
+  return result;
+});
+
+ipcMain.handle('file:read', async (event, filePath) => {
+  try {
+    const data = await fs.readFile(filePath);
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('file:write', async (event, filePath, data) => {
+  try {
+    await fs.writeFile(filePath, data);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('file:stat', async (event, filePath) => {
+  try {
+    const stats = await fs.stat(filePath);
+    return { 
+      success: true, 
+      stats: {
+        size: stats.size,
+        isFile: stats.isFile(),
+        isDirectory: stats.isDirectory(),
+        mtime: stats.mtime,
+        ctime: stats.ctime
+      }
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('file:exists', async (event, filePath) => {
+  try {
+    await fs.access(filePath);
+    return { success: true, exists: true };
+  } catch (error) {
+    return { success: true, exists: false };
+  }
+});
 
 app.whenReady().then(() => {
   createWindow()

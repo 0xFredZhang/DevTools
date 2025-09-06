@@ -1,7 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(pnpm add:*)"
+      "Bash(pnpm add:*)",
+      "Bash(git add:*)",
+      "mcp__spec-workflow__spec-list",
+      "mcp__spec-workflow__steering-guide",
+      "mcp__spec-workflow__get-steering-context",
+      "mcp__spec-workflow__get-template-context",
+      "mcp__spec-workflow__create-steering-doc",
+      "mcp__spec-workflow__request-approval"
     ],
     "deny": [],
     "ask": []

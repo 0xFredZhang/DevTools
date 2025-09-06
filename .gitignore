@@ -171,3 +171,6 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# AI tool files
+.spec-workflow/

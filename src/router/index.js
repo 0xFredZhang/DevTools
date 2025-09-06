@@ -4,6 +4,7 @@ import JsonParser from '../views/JsonParser.vue'
 import JsonCompress from '../views/JsonCompress.vue'
 import QrGenerator from '../views/QrGenerator.vue'
 import TimestampTool from '../views/TimestampTool.vue'
+import CompressTool from '../views/CompressTool.vue'
 
 const routes = [
   {
@@ -30,6 +31,11 @@ const routes = [
     path: '/timestamp',
     name: 'TimestampTool',
     component: TimestampTool
+  },
+  {
+    path: '/compress-tool',
+    name: 'CompressTool',
+    component: CompressTool
   }
 ]
 

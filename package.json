@@ -7,6 +7,18 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:unit": "vitest run src/tests/*Service.test.js",
+    "test:components": "vitest run src/tests/*.component.test.js",
+    "test:performance": "vitest run src/tests/performance.test.js",
+    "test:security": "vitest run src/tests/security.test.js",
+    "test:memory": "vitest run src/tests/memory.test.js",
+    "test:success-rate": "vitest run src/tests/successRate.test.js",
+    "test:ux": "vitest run src/tests/userExperience.test.js",
+    "test:coverage": "vitest run --coverage",
+    "test:ci": "npm run test:unit && npm run test:components && npm run test:security",
+    "test:full": "npm run test:ci && npm run test:performance && npm run test:memory && npm run test:success-rate && npm run test:ux",
     "electron": "electron .",
     "electron:serve": "concurrently -k \"pnpm run dev\" \"wait-on tcp:5173 && electron . --dev\"",
     "electron:build": "pnpm run build && electron-builder",
@@ -14,19 +26,28 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
+    "crypto-js": "^4.2.0",
+    "jszip": "^3.10.1",
+    "jszip-utils": "^0.1.0",
+    "node-stream-zip": "^1.15.0",
     "qrcode": "^1.5.3",
     "vue": "^3.4.21",
-    "vue-router": "^4.3.0"
+    "vue-router": "^4.3.0",
+    "yauzl": "^3.2.0",
+    "yazl": "^3.3.1"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.4",
+    "@vue/test-utils": "^2.4.6",
     "autoprefixer": "^10.4.18",
     "concurrently": "^8.2.2",
     "electron": "^29.0.1",
     "electron-builder": "^24.13.3",
+    "jsdom": "^26.1.0",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",
     "vite": "^5.1.4",
+    "vitest": "^1.3.1",
     "wait-on": "^7.2.0"
   },
   "build": {
